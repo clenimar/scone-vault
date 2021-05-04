@@ -1,0 +1,14 @@
+#!/bin/bash
+function determine_sgx_device {
+    export SGXDEVICE="/dev/sgx"
+    export MOUNT_SGXDEVICE="-v /dev/sgx/:/dev/sgx"
+    if [[ ! -e "$SGXDEVICE" ]] ; then
+        export SGXDEVICE="/dev/isgx"
+        export MOUNT_SGXDEVICE="--device=/dev/isgx"
+        if [[ ! -c "$SGXDEVICE" ]] ; then
+            echo "Warning: No SGX device found!" > /dev/stderr
+            export MOUNT_SGXDEVICE=""
+            export SGXDEVICE=""
+        fi
+    fi
+}

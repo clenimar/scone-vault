@@ -11,7 +11,7 @@ services:
         cap_add:
          - IPC_LOCK
         devices:
-         - "/dev/isgx"           
+         - ${SGXDEVICE}
     scone-vault-nginx:
         image: registry.scontain.com:5050/sconecuratedimages/apps:nginx-1.14.2-alpine-scone5
         environment:
@@ -27,4 +27,5 @@ services:
         depends_on:
          - vault
         devices:
-         - "/dev/isgx"           
+         - ${SGXDEVICE}   
+
