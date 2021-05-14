@@ -80,6 +80,119 @@ docker-compose up
 docker-compose down
 ```
 
+## Running on Azure Kubernetes Service
+
+To run this demo on a confidential AKS cluster, follow this set of steps.
+
+1. Setup your Kubernetes cluster. You can either create a new cluster with a Confidential Computing-enabled nodepool, or add a confidential nodepool to an existing cluster.
+
+You can check Azure official docs to see how to [create a confidential node pool or upgrade your existing cluster](https://docs.microsoft.com/en-us/azure/confidential-computing/confidential-nodes-aks-get-started).
+
+But the overall steps are (to create a new cluster):
+
+```bash
+# Authenticate to the Azure CLI
+az login
+# Create a resource group
+az group create --name myResourceGroup --location westus
+# Create a new cluster. This configures a system pool (does not have SGX) with 1 node
+az aks create -g myResourceGroup --name myAKSCluster --generate-ssh-keys --enable-addon confcom -c 1
+# Create a confidential node pool with 2 DC2s_v2 nodes
+az aks nodepool add --cluster-name myAKSCluster --name confcompool1 --resource-group myResourceGroup --node-vm-size Standard_DC2s_v2 -c 2
+# Get credentials to configure kubectl
+az aks get-credentials --resource-group myResourceGroup --name myAKSCluster
+```
+
+This demo assumes that the Azure SGX Device Plugin is installed in the cluster. New Confidential Computing-enabled node pools already come with the Azure SGX Device Plugin installed, which configures access to the SGX driver in the nodes.
+
+Access to the SGX driver is requested in the Kubernetes manifest of the application:
+
+```yaml
+resources:
+  limits:
+    kubernetes.azure.com/sgx_epc_mem_in_MiB: 4
+```
+
+You can make sure the Azure SGX Device Plugin is installed by looking for its pods:
+
+```bash
+$ kubectl get pods -nkube-system | grep sgx-plugin
+sgx-plugin-fb5zn                      1/1     Running   0          2d20h
+sgx-plugin-xftgm                      1/1     Running   0          2d20h
+```
+
+If you have other SGX device plugin installed, you can change the `resources.limits` field of `deploy-aks/vault/vault-statefulset.yml` and `deploy-aks/nginx/nginx-deployment.yml` accordingly (e.g., for the [SCONE SGX Device Plugin](https://sconedocs.github.io/helm_sgxdevplugin/)):
+
+```yaml
+resources:
+  limits:
+    sgx.k8s.io/sgx: 1
+```
+
+2. Configure Kubernetes to pull private images through an `imagePullSecret`. This demo assumes that you have a secret named "sconeapps".
+
+Replace with actual credentials and run:
+
+```bash
+export REGISTRY_USER=foo
+export REGISTRY_PASSWORD=token
+export REGISTRY_USER_EMAIL=foo@example.com
+kubectl create secret docker-registry sconeapps --docker-server=registry.scontain.com:5050 --docker-username=$REGISTRY_USER --docker-password=$REGISTRY_TOKEN --docker-email=$REGISTRY_USER_EMAIL
+```
+
+Check [Kubernetes official docs on imagePullSecrets](https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/).
+
+3. Start Vault.
+
+```bash
+kubectl create -f deploy-aks/vault
+```
+
+This will install Vault as a DaemonSet, alongside a Secret for the NGINX certificates, a ConfigMap for the NGINX configuration files, and a Service to expose the Vault server through the name `scone-vault` inside of the cluster.
+
+To see the pods currently running:
+
+```bash
+kubectl get pods
+```
+
+To check Vault server logs:
+
+```bash
+kubectl logs scone-vault-0
+```
+
+4. Start NGINX
+
+```bash
+kubectl create -f deploy-aks/nginx
+```
+
+Then check the logs for the NGINX pod. Find the NGINX pod name:
+
+```bash
+kubectl get pods
+```
+
+And see the logs:
+
+```bash
+kubectl logs <nginx-pod-name>
+```
+
+5. Clean up:
+
+```bash
+# Delete NGINX deployment
+kubectl delete -f deploy-aks/nginx
+# Delete Vault deployment
+kubectl delete -f deploy-aks/vault
+# Delete confidential nodepool on AKS
+az aks nodepool delete --cluster-name myAKSCluster --name confcompool1 --resource-group myResourceGroup
+# Delete AKS cluster
+az aks delete --resource-group myResourceGroup --name myAKSCluster
+```
+
 ## Contacts
 
 Send email to info@scontain.com

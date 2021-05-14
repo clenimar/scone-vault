@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scone-nginx
+  labels:
+    app.kubernetes.io/name: nginx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: nginx
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: nginx
+    spec:
+      imagePullSecrets:
+        - name: sconeapps
+      volumes:
+        - name: nginx-bench
+          configMap:
+            name: scone-nginx-bench
+            defaultMode: 511
+      containers:
+        - name: nginx
+          image: "registry.scontain.com:5050/sconecuratedimages/apps:nginx-1.14.2-alpine-scone5"
+          imagePullPolicy: IfNotPresent
+          command:
+            - "/bin/sh"
+            - "-ec"
+          args:
+            - |
+              apk add --update --no-cache gettext curl coreutils jq
+              ./bench/bench.sh
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          resources:
+            limits:
+              kubernetes.azure.com/sgx_epc_mem_in_MiB: 4
+          env:
+            - name: URL
+              value: "http://scone-vault:8201"
+            - name: INDEX
+              value: "nginx"
+            - name: VAULT_ADDR
+              value: "http://scone-vault:8200"
+            - name: TOKEN
+              value: RootToken
+            - name: SCONE_MODE
+              value: sim
+          volumeMounts:
+            - name: nginx-bench
+              mountPath: /bench

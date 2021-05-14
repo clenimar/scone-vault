@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: scone-vault
+  labels:
+    app.kubernetes.io/name: vault
+spec:
+  serviceName: scone-vault
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+      component: server
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vault
+        component: server
+    spec:
+      terminationGracePeriodSeconds: 60
+      imagePullSecrets:
+        - name: sconeapps
+      volumes:
+        - name: config
+          configMap:
+            name: scone-vault-config
+        - name: certs
+          secret:
+            secretName: scone-vault-certs
+      containers:
+        - name: vault
+          image: registry.scontain.com:5050/sconecuratedimages/apps:vault-1.5.3-alpine-scone5
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            capabilities:
+              add: ["IPC_LOCK"]
+          command:
+          - "/bin/sh"
+          - "-ec"
+          args:
+          - |
+            vault server -tls-skip-verify -dev -dev-listen-address 0.0.0.0:8200 &
+            sleep 6
+            PID=$!
+
+            vault secrets enable -path=tud-secret kv
+            #vault mount -path=tud-secret kv
+            vault write tud-secret/nginx/default.conf value=@./config/default.conf
+            vault write tud-secret/nginx/nginx.conf value=@./config/nginx.conf
+            vault write tud-secret/nginx/ssl.conf value=@./config/ssl.conf
+            vault write tud-secret/nginx/cert value=@./certs/cert.pem
+            vault write tud-secret/nginx/key value=@./certs/key.pem
+            wait $PID
+          env:
+            - name: VAULT_DEV_ROOT_TOKEN_ID
+              value: RootToken
+            - name: SCONE_MODE
+              value: sim
+            - name: VAULT_ADDR
+              value: "http://127.0.0.1:8200"
+          ports:
+            - containerPort: 8200
+              name: http
+            - containerPort: 8201
+              name: https-internal
+            - containerPort: 8202
+              name: http-rep
+          resources:
+            limits:
+              kubernetes.azure.com/sgx_epc_mem_in_MiB: 4
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: certs
+              mountPath: /certs
